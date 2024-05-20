@@ -163,6 +163,7 @@ require (
 
 replace (
 	github.com/containerd/containerd => github.com/containerd/containerd v1.6.19
+	github.com/distribution/reference => github.com/distribution/reference v0.5.0
 	github.com/docker/docker => github.com/docker/docker v20.10.3+incompatible
 	github.com/testcontainers/testcontainers-go => github.com/testcontainers/testcontainers-go v0.15.0
 )

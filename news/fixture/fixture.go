@@ -65,10 +65,10 @@ func newMBConnector() messagebrokerfixture.TestConnector {
 	return messagebrokerfixture.NewTestConnector(applicationYAMLKey, TestConnectorsOrder)
 }
 
-func RContainerMounts() []func(projectRoot string) testcontainers.ContainerMount {
+func RContainerMounts() []func(projectRoot string) testcontainers.ContainerMount { //nolint:typecheck // .
 	return nil
 }
 
-func WContainerMounts() []func(projectRoot string) testcontainers.ContainerMount {
+func WContainerMounts() []func(projectRoot string) testcontainers.ContainerMount { //nolint:typecheck // .
 	return nil
 }
