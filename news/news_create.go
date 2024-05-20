@@ -56,7 +56,7 @@ func (r *repository) insertNews(ctx context.Context, news []*TaggedNews) error {
 			nws.Title, nws.ImageURL, nws.URL,
 		)
 		values = append(values, fmt.Sprintf("($%[1]v,$%[2]v,$%[3]v,$%[4]v,$%[5]v,$%[6]v,$%[7]v,$%[8]v,$%[9]v)",
-			fields*ix+1, fields*ix+2, fields*ix+3, fields*ix+4, fields*ix+5, fields*ix+6, fields*ix+7, fields*ix+8, fields*ix+9)) //nolint:gomnd // .
+			fields*ix+1, fields*ix+2, fields*ix+3, fields*ix+4, fields*ix+5, fields*ix+6, fields*ix+7, fields*ix+8, fields*ix+9)) //nolint:gomnd,mnd // .
 	}
 	sql := fmt.Sprintf(`INSERT INTO news (CREATED_AT, UPDATED_AT, NOTIFICATION_CHANNELS, ID, TYPE, LANGUAGE, TITLE, IMAGE_URL, URL) VALUES %v`, strings.Join(values, ",")) //nolint:lll // .
 	if _, err := storage.Exec(ctx, r.db, sql, args...); err != nil {

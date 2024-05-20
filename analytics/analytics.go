@@ -141,7 +141,7 @@ func (s *trackActionSource) Process(ctx context.Context, msg *messagebroker.Mess
 }
 
 func (p *processor) startOldTrackedActionsCleaner(ctx context.Context) {
-	ticker := stdlibtime.NewTicker(stdlibtime.Duration(1+rand.Intn(24)) * stdlibtime.Minute) //nolint:gosec,gomnd // Not an  issue.
+	ticker := stdlibtime.NewTicker(stdlibtime.Duration(1+rand.Intn(24)) * stdlibtime.Minute) //nolint:gosec,gomnd,mnd // Not an  issue.
 	defer ticker.Stop()
 
 	for {

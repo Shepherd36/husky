@@ -196,7 +196,7 @@ func (r *repository) sendTaggedNewsSnapshotMessage(ctx context.Context, ss *Tagg
 	}
 	var key string
 	if ss.TaggedNews == nil {
-		key = ss.Before.ID + "~~~" + ss.Before.Language //nolint:goconst //.
+		key = ss.Before.ID + "~~~" + ss.Before.Language
 	} else {
 		key = ss.ID + "~~~" + ss.Language
 	}
@@ -214,7 +214,7 @@ func (r *repository) sendTaggedNewsSnapshotMessage(ctx context.Context, ss *Tagg
 }
 
 func (p *processor) startNewsViewsUpdater(ctx context.Context) {
-	ticker := stdlibtime.NewTicker(stdlibtime.Duration(10*(1+rand.Intn(10))) * stdlibtime.Second) //nolint:gosec,gomnd // Not an  issue.
+	ticker := stdlibtime.NewTicker(stdlibtime.Duration(10*(1+rand.Intn(10))) * stdlibtime.Second) //nolint:gosec,gomnd,mnd // Not an  issue.
 	defer ticker.Stop()
 
 	for {

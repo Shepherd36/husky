@@ -245,7 +245,7 @@ func generateNews(db tarantool.Connector) { //nolint:funlen // .
 		insertTag(db, now, language, fmt.Sprintf("testing%v", now))
 	}
 	const items = 100
-	for ix := 0; ix < items; ix++ {
+	for ix := range items {
 		nws := make([]*news.TaggedNews, 0, (items+1+1)*len(languages))
 		if ix%(items/(1+1)) == 0 {
 			id := uuid.NewString()

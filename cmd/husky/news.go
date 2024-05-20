@@ -63,7 +63,7 @@ func (s *service) GetNews( //nolint:gocritic,funlen // False negative.
 	if req.Data.Limit == 0 {
 		req.Data.Limit = 10
 	}
-	if req.Data.Limit > 1000 { //nolint:gomnd //.
+	if req.Data.Limit > 1000 { //nolint:gomnd,mnd //.
 		req.Data.Limit = 1000
 	}
 	req.Data.Language = strings.ToLower(req.Data.Language)
