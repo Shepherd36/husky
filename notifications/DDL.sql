@@ -31,6 +31,22 @@ CREATE TABLE IF NOT EXISTS sent_notifications  (
                     primary key(user_id,uniqueness,notification_type,notification_channel,notification_channel_value));
 CREATE INDEX IF NOT EXISTS sent_notifications_sent_at_ix ON sent_notifications (sent_at);
 --************************************************************************************************************************************
+-- scheduled_notifications
+CREATE TABLE IF NOT EXISTS scheduled_notifications  (
+                    i                           BIGINT generated always as identity NOT NULL,
+                    scheduled_at                TIMESTAMP NOT NULL,
+                    scheduled_for               TIMESTAMP NOT NULL,
+                    data                        JSONB NOT NULL,
+                    language                    TEXT NOT NULL,
+                    user_id                     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    uniqueness                  TEXT NOT NULL,
+                    notification_type           TEXT NOT NULL,
+                    notification_channel        TEXT NOT NULL,
+                    notification_channel_value  TEXT NOT NULL,
+                    primary key(user_id,uniqueness,notification_type,notification_channel,notification_channel_value));
+CREATE UNIQUE INDEX IF NOT EXISTS scheduled_notifications_i_ix ON scheduled_notifications (i);
+CREATE INDEX IF NOT EXISTS scheduled_notifications_lookup_ix ON scheduled_notifications (i,scheduled_for DESC);
+--************************************************************************************************************************************
 -- sent_announcements
 CREATE TABLE IF NOT EXISTS sent_announcements (
                     sent_at                         TIMESTAMP NOT NULL,
@@ -41,6 +57,21 @@ CREATE TABLE IF NOT EXISTS sent_announcements (
                     notification_channel_value      TEXT NOT NULL,
                     primary key(uniqueness,notification_type,notification_channel,notification_channel_value));
 CREATE INDEX IF NOT EXISTS sent_announcements_sent_at_ix ON sent_announcements (sent_at);
+--************************************************************************************************************************************
+-- scheduled_announcements
+CREATE TABLE IF NOT EXISTS scheduled_announcements (
+                    i                               BIGINT generated always as identity NOT NULL,
+                    scheduled_at                    TIMESTAMP NOT NULL,
+                    scheduled_for                   TIMESTAMP NOT NULL,
+                    data                            JSONB NOT NULL,
+                    language                        TEXT NOT NULL,
+                    uniqueness                      TEXT NOT NULL,
+                    notification_type               TEXT NOT NULL,
+                    notification_channel            TEXT NOT NULL,
+                    notification_channel_value      TEXT NOT NULL,
+                    primary key(uniqueness,notification_type,notification_channel,notification_channel_value));
+CREATE UNIQUE INDEX IF NOT EXISTS scheduled_announcements_i_ix ON scheduled_announcements (i);
+CREATE INDEX IF NOT EXISTS scheduled_announcements_lookup_ix ON scheduled_announcements (i,scheduled_for DESC);
 --************************************************************************************************************************************
 -- device_metadata
 CREATE TABLE IF NOT EXISTS device_metadata (
