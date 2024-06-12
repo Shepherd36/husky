@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: ice License 1.0
 
-basePath: /v1w
 definitions:
   main.News:
     properties:
@@ -63,6 +62,53 @@ definitions:
         example: true
         type: boolean
     type: object
+  news.PersonalNews:
+    properties:
+      createdAt:
+        example: "2022-01-03T16:20:52.156534Z"
+        type: string
+      id:
+        example: did:ethr:0x4B73C58370AEfcEf86A6021afCDe5673511376B2
+        type: string
+      imageUrl:
+        example: https://somewebsite.com/blockchain.jpg
+        type: string
+      language:
+        example: en
+        type: string
+      notificationChannels:
+        items:
+          enum:
+          - inapp
+          - sms
+          - email
+          - push
+          - analytics
+          - push||analytics
+          - push||email
+          - push||email||analytics
+          type: string
+        type: array
+      title:
+        example: The importance of the blockchain technology
+        type: string
+      type:
+        allOf:
+        - $ref: '#/definitions/news.Type'
+        example: regular
+      updatedAt:
+        example: "2022-01-03T16:20:52.156534Z"
+        type: string
+      url:
+        example: https://somewebsite.com/blockchain
+        type: string
+      viewed:
+        example: true
+        type: boolean
+      views:
+        example: 123
+        type: integer
+    type: object
   news.Type:
     enum:
     - regular
@@ -71,6 +117,12 @@ definitions:
     x-enum-varnames:
     - RegularNewsType
     - FeaturedNewsType
+  news.UnreadNewsCount:
+    properties:
+      count:
+        example: 1
+        type: integer
+    type: object
   notifications.InAppNotificationsUserAuthToken:
     properties:
       apiKey:
@@ -80,6 +132,42 @@ definitions:
       appId:
         type: string
     type: object
+  notifications.NotificationChannelToggle:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+      type:
+        allOf:
+        - $ref: '#/definitions/notifications.NotificationDomain'
+        example: system
+    type: object
+  notifications.NotificationDomain:
+    enum:
+    - disable_all
+    - all
+    - weekly_report
+    - weekly_stats
+    - achievements
+    - promotions
+    - news
+    - micro_community
+    - mining
+    - daily_bonus
+    - system
+    type: string
+    x-enum-varnames:
+    - DisableAllNotificationDomain
+    - AllNotificationDomain
+    - WeeklyReportNotificationDomain
+    - WeeklyStatsNotificationDomain
+    - AchievementsNotificationDomain
+    - PromotionsNotificationDomain
+    - NewsNotificationDomain
+    - MicroCommunityNotificationDomain
+    - MiningNotificationDomain
+    - DailyBonusNotificationDomain
+    - SystemNotificationDomain
   server.ErrorResponse:
     properties:
       code:
@@ -96,12 +184,179 @@ info:
   contact:
     name: ice.io
     url: https://ice.io
-  description: API that handles everything related to write-only operations for notifying
-    users about anything worthwhile.
+  description: API that handles everything related to notifying users about anything
+    worthwhile.
   title: Notifications API
   version: latest
 paths:
-  /inapp-notifications-user-auth-token:
+  /v1r/news/{language}:
+    get:
+      consumes:
+      - application/json
+      description: Returns a list of news.
+      parameters:
+      - default: Bearer <Add access token here>
+        description: Insert your access token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: type of news to look for. Default is `regular`.
+        enum:
+        - regular
+        - featured
+        in: query
+        name: type
+        type: string
+      - description: the language of the news article
+        in: path
+        name: language
+        required: true
+        type: string
+      - description: Limit of elements to return. Defaults to 10
+        in: query
+        name: limit
+        type: integer
+      - description: Elements to skip before starting to look for
+        in: query
+        name: offset
+        type: integer
+      - description: Example `2022-01-03T16:20:52.156534Z`. If unspecified, the creation
+          date of the news articles will be ignored.
+        in: query
+        name: createdAfter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/news.PersonalNews'
+            type: array
+        "400":
+          description: if validations fail
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "401":
+          description: if not authorized
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "422":
+          description: if syntax fails
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "504":
+          description: if request times out
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      tags:
+      - News
+  /v1r/notification-channels/{notificationChannel}/toggles:
+    get:
+      consumes:
+      - application/json
+      description: Returns the user's list of notification channel toggles for the
+        provided notificationChannel.
+      parameters:
+      - default: Bearer <Add access token here>
+        description: Insert your access token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: email/push
+        enum:
+        - push
+        - email
+        in: path
+        name: notificationChannel
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/notifications.NotificationChannelToggle'
+            type: array
+        "400":
+          description: if validations fail
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "401":
+          description: if not authorized
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "422":
+          description: if syntax fails
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "504":
+          description: if request times out
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      tags:
+      - Notifications
+  /v1r/unread-news-count/{language}:
+    get:
+      consumes:
+      - application/json
+      description: Returns the number of unread news the authorized user has.
+      parameters:
+      - default: Bearer <Add access token here>
+        description: Insert your access token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: The language of the news to be counted
+        in: path
+        name: language
+        required: true
+        type: string
+      - description: Example `2022-01-03T16:20:52.156534Z`. If unspecified, the creation
+          date of the news articles will be ignored.
+        in: query
+        name: createdAfter
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/news.UnreadNewsCount'
+        "401":
+          description: if not authorized
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "422":
+          description: if syntax fails
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+        "504":
+          description: if request times out
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
+      tags:
+      - News
+  /v1w/inapp-notifications-user-auth-token:
     put:
       consumes:
       - application/json
@@ -147,7 +402,7 @@ paths:
             $ref: '#/definitions/server.ErrorResponse'
       tags:
       - Notifications
-  /news:
+  /v1w/news:
     post:
       consumes:
       - multipart/form-data
@@ -212,7 +467,7 @@ paths:
             $ref: '#/definitions/server.ErrorResponse'
       tags:
       - News
-  /news/{language}/{newsId}:
+  /v1w/news/{language}/{newsId}:
     delete:
       consumes:
       - application/json
@@ -362,7 +617,7 @@ paths:
             $ref: '#/definitions/server.ErrorResponse'
       tags:
       - News
-  /notification-channels/{notificationChannel}/toggles/{type}:
+  /v1w/notification-channels/{notificationChannel}/toggles/{type}:
     put:
       consumes:
       - application/json
@@ -435,7 +690,7 @@ paths:
             $ref: '#/definitions/server.ErrorResponse'
       tags:
       - Notifications
-  /user-pings/{userId}:
+  /v1w/user-pings/{userId}:
     post:
       consumes:
       - application/json

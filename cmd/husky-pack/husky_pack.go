@@ -19,12 +19,11 @@ import (
 
 // @title						Notifications API
 // @version					latest
-// @description				API that handles everything related to write-only operations for notifying users about anything worthwhile.
+// @description				API that handles everything related to notifying users about anything worthwhile.
 // @query.collection.format	multi
 // @schemes					https
 // @contact.name				ice.io
 // @contact.url				https://ice.io
-// @BasePath					/v1w
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -37,6 +36,7 @@ func main() {
 }
 
 func (s *service) RegisterRoutes(router *server.Router) {
+	s.registerReadRoutes(router)
 	s.setupNotificationsRoutes(router)
 	s.setupNewsRoutes(router)
 }

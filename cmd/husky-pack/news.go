@@ -49,7 +49,7 @@ func (s *service) setupNewsRoutes(router *server.Router) {
 //	@Failure		422					{object}	server.ErrorResponse	"if syntax fails"
 //	@Failure		500					{object}	server.ErrorResponse
 //	@Failure		504					{object}	server.ErrorResponse	"if request times out"
-//	@Router			/news [POST].
+//	@Router			/v1w/news [POST].
 func (s *service) CreateNews( //nolint:gocritic,funlen // .
 	ctx context.Context,
 	req *server.Request[CreateNewsRequestBody, []*News],
@@ -238,7 +238,7 @@ func (*CreateNewsRequestBody) validateNews(nws []*news.TaggedNews) error {
 //	@Failure		422				{object}	server.ErrorResponse	"if syntax fails"
 //	@Failure		500				{object}	server.ErrorResponse
 //	@Failure		504				{object}	server.ErrorResponse	"if request times out"
-//	@Router			/news/{language}/{newsId} [DELETE].
+//	@Router			/v1w/news/{language}/{newsId} [DELETE].
 func (s *service) DeleteNews( //nolint:gocritic // .
 	ctx context.Context,
 	req *server.Request[DeleteNewsArg, any],
@@ -280,7 +280,7 @@ func (s *service) DeleteNews( //nolint:gocritic // .
 //	@Failure		422					{object}	server.ErrorResponse	"if syntax fails"
 //	@Failure		500					{object}	server.ErrorResponse
 //	@Failure		504					{object}	server.ErrorResponse	"if request times out"
-//	@Router			/news/{language}/{newsId} [PATCH].
+//	@Router			/v1w/news/{language}/{newsId} [PATCH].
 func (s *service) ModifyNews( //nolint:gocritic,funlen // .
 	ctx context.Context,
 	req *server.Request[ModifyNewsRequestBody, News],

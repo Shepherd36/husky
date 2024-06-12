@@ -38,7 +38,7 @@ func (s *service) setupNotificationsRoutes(router *server.Router) {
 //	@Failure		422				{object}	server.ErrorResponse	"if syntax fails"
 //	@Failure		500				{object}	server.ErrorResponse
 //	@Failure		504				{object}	server.ErrorResponse	"if request times out"
-//	@Router			/user-pings/{userId} [POST].
+//	@Router			/v1w/user-pings/{userId} [POST].
 func (s *service) PingUser( //nolint:gocritic // .
 	ctx context.Context,
 	req *server.Request[PingUserArg, any],
@@ -78,7 +78,7 @@ func (s *service) PingUser( //nolint:gocritic // .
 //	@Failure		422					{object}	server.ErrorResponse	"if syntax fails"
 //	@Failure		500					{object}	server.ErrorResponse
 //	@Failure		504					{object}	server.ErrorResponse	"if request times out"
-//	@Router			/notification-channels/{notificationChannel}/toggles/{type} [PUT].
+//	@Router			/v1w/notification-channels/{notificationChannel}/toggles/{type} [PUT].
 func (s *service) ToggleNotificationChannelDomain( //nolint:gocritic // False negative.
 	ctx context.Context,
 	req *server.Request[ToggleNotificationChannelDomainRequestBody, any],
@@ -128,7 +128,7 @@ func (arg *ToggleNotificationChannelDomainRequestBody) validate() error {
 //	@Failure		422				{object}	server.ErrorResponse	"if syntax fails"
 //	@Failure		500				{object}	server.ErrorResponse
 //	@Failure		504				{object}	server.ErrorResponse	"if request times out"
-//	@Router			/inapp-notifications-user-auth-token [PUT].
+//	@Router			/v1w/inapp-notifications-user-auth-token [PUT].
 func (s *service) GenerateInAppNotificationsUserAuthToken( //nolint:gocritic // False negative.
 	ctx context.Context,
 	req *server.Request[GenerateInAppNotificationsUserAuthTokenArg, notifications.InAppNotificationsUserAuthToken],
