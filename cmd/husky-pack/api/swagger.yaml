@@ -25,10 +25,7 @@ definitions:
           - sms
           - email
           - push
-          - analytics
-          - push||analytics
           - push||email
-          - push||email||analytics
           type: string
         type: array
       tags:
@@ -83,10 +80,7 @@ definitions:
           - sms
           - email
           - push
-          - analytics
-          - push||analytics
           - push||email
-          - push||email||analytics
           type: string
         type: array
       title:

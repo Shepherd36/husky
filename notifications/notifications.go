@@ -4,6 +4,7 @@ package notifications
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"strings"
 	"sync"
@@ -32,7 +33,8 @@ func New(ctx context.Context, _ context.CancelFunc) Repository {
 	var cfg config
 	appcfg.MustLoadFromKey(applicationYamlKey, &cfg)
 
-	db := storage.MustConnect(ctx, ddl, applicationYamlKey)
+	ddlWorkersParam := fmt.Sprintf(ddl, schedulerWorkersCount)
+	db := storage.MustConnect(ctx, ddlWorkersParam, applicationYamlKey)
 
 	return &repository{
 		cfg:           &cfg,
@@ -46,10 +48,12 @@ func StartProcessor(ctx context.Context, cancel context.CancelFunc) Processor { 
 	var cfg config
 	appcfg.MustLoadFromKey(applicationYamlKey, &cfg)
 
+	ddlWorkersParam := fmt.Sprintf(ddl, schedulerWorkersCount)
+
 	var mbConsumer messagebroker.Client
 	prc := &processor{repository: &repository{
 		cfg:                     &cfg,
-		db:                      storage.MustConnect(context.Background(), ddl, applicationYamlKey), //nolint:contextcheck // We need to gracefully shut it down.
+		db:                      storage.MustConnect(context.Background(), ddlWorkersParam, applicationYamlKey), //nolint:contextcheck,lll // We need to gracefully shut it down.
 		mb:                      messagebroker.MustConnect(ctx, applicationYamlKey),
 		pushNotificationsClient: push.New(applicationYamlKey),
 		pictureClient:           picture.New(applicationYamlKey),
@@ -67,11 +71,11 @@ func StartProcessor(ctx context.Context, cancel context.CancelFunc) Processor { 
 		&newsTableSource{processor: prc},
 		&availableDailyBonusSource{processor: prc},
 		&userPingSource{processor: prc},
-		&startedDaysOffSource{processor: prc},
 		&achievedBadgesSource{processor: prc},
 		&completedLevelsSource{processor: prc},
 		&enabledRolesSource{processor: prc},
 		&agendaContactsSource{processor: prc},
+		&miningSessionSource{processor: prc},
 	)
 	prc.shutdown = closeAll(mbConsumer, prc.mb, prc.db, prc.pushNotificationsClient.Close)
 	go prc.startOldSentNotificationsCleaner(ctx)
@@ -125,7 +129,7 @@ func (p *processor) CheckHealth(ctx context.Context) error {
 }
 
 func (p *processor) startOldSentNotificationsCleaner(ctx context.Context) {
-	ticker := stdlibtime.NewTicker(stdlibtime.Duration(1+rand.Intn(24)) * stdlibtime.Minute) //nolint:gosec,gomnd,mnd // Not an  issue.
+	ticker := stdlibtime.NewTicker(stdlibtime.Duration(1+rand.Intn(24)) * stdlibtime.Minute) //nolint:gosec // Not an  issue.
 	defer ticker.Stop()
 
 	for {
@@ -142,7 +146,7 @@ func (p *processor) startOldSentNotificationsCleaner(ctx context.Context) {
 }
 
 func (p *processor) startOldSentAnnouncementsCleaner(ctx context.Context) {
-	ticker := stdlibtime.NewTicker(stdlibtime.Duration(1+rand.Intn(24)) * stdlibtime.Minute) //nolint:gosec,gomnd,mnd // Not an  issue.
+	ticker := stdlibtime.NewTicker(stdlibtime.Duration(1+rand.Intn(24)) * stdlibtime.Minute) //nolint:gosec // Not an  issue.
 	defer ticker.Stop()
 
 	for {

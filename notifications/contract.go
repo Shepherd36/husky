@@ -6,6 +6,7 @@ import (
 	"context"
 	"embed"
 	"io"
+	"sync"
 	stdlibtime "time"
 
 	"github.com/pkg/errors"
@@ -23,14 +24,11 @@ import (
 // Public API.
 
 const (
-	InAppNotificationChannel                                      NotificationChannel = "inapp"
-	SMSNotificationChannel                                        NotificationChannel = "sms"
-	EmailNotificationChannel                                      NotificationChannel = "email"
-	PushNotificationChannel                                       NotificationChannel = "push"
-	AnalyticsNotificationChannel                                  NotificationChannel = "analytics"
-	PushOrFallbackToAnalyticsNotificationChannel                  NotificationChannel = "push||analytics"
-	PushOrFallbackToEmailNotificationChannel                      NotificationChannel = "push||email"
-	PushOrFallbackToEmailOrFallbackToAnalyticsNotificationChannel NotificationChannel = "push||email||analytics"
+	InAppNotificationChannel                 NotificationChannel = "inapp"
+	SMSNotificationChannel                   NotificationChannel = "sms"
+	EmailNotificationChannel                 NotificationChannel = "email"
+	PushNotificationChannel                  NotificationChannel = "push"
+	PushOrFallbackToEmailNotificationChannel NotificationChannel = "push||email"
 )
 
 const (
@@ -59,6 +57,12 @@ const (
 	SocialBadgeUnlockedNotificationType NotificationType = "social_badge_unlocked"
 	RoleChangedNotificationType         NotificationType = "role_changed"
 	LevelChangedNotificationType        NotificationType = "level_changed"
+	MiningExtendNotificationType        NotificationType = "mining_extend"
+	MiningEndingSoonNotificationType    NotificationType = "mining_ending_soon"
+	MiningExpiredNotificationType       NotificationType = "mining_expired"
+	InviteFriendNotificationType        NotificationType = "invite_friend"
+	SocialsNotificationType             NotificationType = "socials"
+	WeeklyStatsNotificationType         NotificationType = "weekly_stats"
 )
 
 var (
@@ -68,10 +72,7 @@ var (
 	ErrPingingUserNotAllowed = errors.New("pinging user is not allowed")
 	//nolint:gochecknoglobals // It's just for more descriptive validation messages.
 	AllNotificationChannels = users.Enum[NotificationChannel]{
-		PushOrFallbackToEmailOrFallbackToAnalyticsNotificationChannel,
-		PushOrFallbackToAnalyticsNotificationChannel,
 		PushOrFallbackToEmailNotificationChannel,
-		AnalyticsNotificationChannel,
 		InAppNotificationChannel,
 		SMSNotificationChannel,
 		EmailNotificationChannel,
@@ -90,6 +91,12 @@ var (
 		SocialBadgeUnlockedNotificationType,
 		RoleChangedNotificationType,
 		LevelChangedNotificationType,
+		MiningExtendNotificationType,
+		MiningEndingSoonNotificationType,
+		MiningExpiredNotificationType,
+		InviteFriendNotificationType,
+		SocialsNotificationType,
+		WeeklyStatsNotificationType,
 	}
 	//nolint:gochecknoglobals // It's just for more descriptive validation messages.
 	AllNotificationDomains = map[NotificationChannel][]NotificationDomain{
@@ -122,7 +129,7 @@ type (
 	NotificationDomain              string
 	NotificationType                string
 	NotificationChannels            struct {
-		NotificationChannels *users.Enum[NotificationChannel] `json:"notificationChannels,omitempty" swaggertype:"array,string" enums:"inapp,sms,email,push,analytics,push||analytics,push||email,push||email||analytics"` //nolint:lll // .
+		NotificationChannels *users.Enum[NotificationChannel] `json:"notificationChannels,omitempty" swaggertype:"array,string" enums:"inapp,sms,email,push,push||email"` //nolint:lll // .
 	}
 	NotificationChannelToggle struct {
 		Type    NotificationDomain `json:"type" example:"system"`
@@ -153,6 +160,16 @@ type (
 		Repository
 		CheckHealth(ctx context.Context) error
 	}
+	Scheduler struct {
+		pictureClient            picture.Client
+		pushNotificationsClient  push.Client
+		cfg                      *config
+		schedulerAnnouncementsMX *sync.Mutex
+		schedulerNotificationsMX *sync.Mutex
+		telemetryNotifications   *telemetry
+		telemetryAnnouncements   *telemetry
+		db                       *storage.DB
+	}
 )
 
 // Private API.
@@ -160,6 +177,10 @@ type (
 const (
 	applicationYamlKey          = "notifications"
 	requestingUserIDCtxValueKey = "requestingUserIDCtxValueKey"
+	requestDeadline             = 30 * stdlibtime.Second
+
+	schedulerWorkersCount int64 = 10
+	schedulerBatchSize    int64 = 250
 )
 
 var (
@@ -212,9 +233,6 @@ type (
 	userPingSource struct {
 		*processor
 	}
-	startedDaysOffSource struct {
-		*processor
-	}
 	achievedBadgesSource struct {
 		*processor
 	}
@@ -225,6 +243,9 @@ type (
 		*processor
 	}
 	agendaContactsSource struct {
+		*processor
+	}
+	miningSessionSource struct {
 		*processor
 	}
 	repository struct {
@@ -245,16 +266,58 @@ type (
 		MinNotificationDelaySec uint `yaml:"minNotificationDelaySec"`
 		MaxNotificationDelaySec uint `yaml:"maxNotificationDelaySec"`
 	}
+	scheduledNotificationInfo struct {
+		PushNotificationTokens          *users.Enum[push.DeviceToken]
+		DisabledPushNotificationDomains *users.Enum[NotificationDomain]
+		scheduledNotification
+	}
+	scheduledNotification struct {
+		ScheduledAt              *time.Time  `json:"scheduledAt,omitempty" example:"2022-01-03T16:20:52.156534Z"`
+		ScheduledFor             *time.Time  `json:"scheduledFor,omitempty" example:"2022-01-03T16:20:52.156534Z"`
+		Data                     *users.JSON `json:"data,omitempty"`
+		Language                 string      `json:"language,omitempty" example:"en"`
+		UserID                   string      `json:"userId,omitempty" example:"edfd8c02-75e0-4687-9ac2-1ce4723865c4"`
+		Uniqueness               string      `json:"uniqueness,omitempty" example:"anything"`
+		NotificationType         string      `json:"notificationType,omitempty" example:"adoption_changed"`
+		NotificationChannel      string      `json:"notificationChannel,omitempty" example:"email"`
+		NotificationChannelValue string      `json:"notificationChannelValue,omitempty" example:"jdoe@example.com"`
+		I                        int64       `json:"i" example:"1"`
+	}
+	scheduledAnnouncement struct {
+		ScheduledAt              *time.Time  `json:"scheduledAt,omitempty" example:"2022-01-03T16:20:52.156534Z"`
+		ScheduledFor             *time.Time  `json:"scheduledFor,omitempty" example:"2022-01-03T16:20:52.156534Z"`
+		Data                     *users.JSON `json:"data,omitempty"`
+		Language                 string      `json:"language,omitempty" example:"en"`
+		Uniqueness               string      `json:"uniqueness,omitempty" example:"anything"`
+		NotificationType         string      `json:"notificationType,omitempty" example:"adoption_changed"`
+		NotificationChannel      string      `json:"notificationChannel,omitempty" example:"email"`
+		NotificationChannelValue string      `json:"notificationChannelValue,omitempty" example:"jdoe@example.com"`
+		I                        int64       `json:"i" example:"1"`
+	}
+	invalidToken struct {
+		UserID string
+		Token  push.DeviceToken
+	}
 	config struct {
-		NotificationDelaysByTopic         map[push.SubscriptionTopic]notificationDelayConfig `yaml:"notificationDelaysByTopic" mapstructure:"notificationDelaysByTopic"` //nolint:lll // .
-		DeeplinkScheme                    string                                             `yaml:"deeplinkScheme"`
+		Socials []struct {
+			Name string `yaml:"name"`
+			Link string `yaml:"link"`
+		} `yaml:"socials"`
 		DisabledAchievementsNotifications struct {
 			Badges []string `yaml:"badges"`
 			Levels []string `yaml:"levels"`
 			Roles  []string `yaml:"roles"`
 		} `yaml:"disabledAchievementsNotifications" `
-		messagebroker.Config    `mapstructure:",squash"` //nolint:tagliatelle // Nope.
-		notificationDelayConfig `mapstructure:",squash"`
-		PingCooldown            stdlibtime.Duration `yaml:"pingCooldown"`
+		NotificationDelaysByTopic map[push.SubscriptionTopic]notificationDelayConfig `yaml:"notificationDelaysByTopic" mapstructure:"notificationDelaysByTopic"` //nolint:lll // .
+		DeeplinkScheme            string                                             `yaml:"deeplinkScheme"`
+		messagebroker.Config      `mapstructure:",squash"`                           //nolint:tagliatelle // Nope.
+		notificationDelayConfig   `mapstructure:",squash"`
+		PingCooldown              stdlibtime.Duration `yaml:"pingCooldown"`
+		WeeklyStats               struct {
+			Weekday stdlibtime.Weekday `yaml:"weekday"`
+			Hour    int                `yaml:"hour"`
+			Minutes int                `yaml:"minutes"`
+		} `yaml:"weeklyStats"`
+		Development bool `yaml:"development"`
 	}
 )
