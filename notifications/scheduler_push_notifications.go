@@ -18,21 +18,21 @@ import (
 )
 
 //nolint:funlen,gocognit,gocyclo,revive,cyclop // .
-func (s *Scheduler) runNotificationsProcessor(ctx context.Context, workerNumber int64) {
+func (s *Scheduler) runPushNotificationsProcessor(ctx context.Context, workerNumber int64) {
 	var (
 		batchNumber                 int64
 		now, lastIterationStartedAt = time.Now(), time.Now()
 		errs                        = make([]error, 0)
-		successedNotifications      = make([]*pushNotification, 0, schedulerBatchSize)
-		emptyTokensNotifications    = make([]*scheduledNotificationInfo, 0, schedulerBatchSize)
-		invalidTokens               = make([]*invalidToken, 0)
-		toSendPushNotifications     = make([]*pushNotification, 0)
-		notifications               = make([]*scheduledNotificationInfo, schedulerBatchSize)
+		successedNotifications      = make([]*sentNotification, 0, schedulerPushBatchSize)
+		emptyTokensNotifications    = make([]*scheduledNotification, 0, schedulerPushBatchSize)
+		invalidTokens               = make([]*invalidToken, 0, schedulerPushBatchSize)
+		toSendPushNotifications     = make([]*pushNotification, 0, schedulerPushBatchSize)
+		notifications               = make([]*scheduledNotificationInfo, schedulerPushBatchSize)
 		err                         error
 	)
 	resetVars := func(success bool) {
-		if success && len(notifications) < int(schedulerBatchSize) {
-			go s.telemetryNotifications.collectElapsed(0, *lastIterationStartedAt.Time)
+		if success && len(notifications) < int(schedulerPushBatchSize) {
+			go s.telemetryPushNotifications.collectElapsed(0, *lastIterationStartedAt.Time)
 			batchNumber = 0
 		}
 		now = time.Now()
@@ -53,7 +53,7 @@ func (s *Scheduler) runNotificationsProcessor(ctx context.Context, workerNumber 
 		******************************************************************************************************************************************************/
 		before := time.Now()
 		reqCtx, reqCancel := context.WithTimeout(ctx, requestDeadline)
-		notifications, err = s.fetchScheduledNotifications(reqCtx, now, workerNumber)
+		notifications, err = s.fetchScheduledNotifications(reqCtx, now, PushNotificationChannel, schedulerPushBatchSize, workerNumber)
 		if err != nil {
 			log.Error(errors.Wrapf(err, "[scheduler] failed to fetch scheduled notifications for batchNumber:%v,workerNumber:%v", batchNumber, workerNumber))
 			resetVars(false)
@@ -61,7 +61,7 @@ func (s *Scheduler) runNotificationsProcessor(ctx context.Context, workerNumber 
 			continue
 		}
 		if len(notifications) > 0 {
-			go s.telemetryNotifications.collectElapsed(1, *before.Time)
+			go s.telemetryPushNotifications.collectElapsed(1, *before.Time)
 		}
 		reqCancel()
 
@@ -88,7 +88,7 @@ func (s *Scheduler) runNotificationsProcessor(ctx context.Context, workerNumber 
 				}
 			}
 			if notification.PushNotificationTokens == nil || len(*notification.PushNotificationTokens) == 0 {
-				emptyTokensNotifications = append(emptyTokensNotifications, notification)
+				emptyTokensNotifications = append(emptyTokensNotifications, &notification.scheduledNotification)
 
 				continue
 			}
@@ -119,27 +119,28 @@ func (s *Scheduler) runNotificationsProcessor(ctx context.Context, workerNumber 
 		/******************************************************************************************************************************************************
 			3. Send all notifications concurrently.
 		******************************************************************************************************************************************************/
+
 		if eErr := runConcurrentlyBatch(ctx, s.sendPushNotification, toSendPushNotifications, func(arg *pushNotification, err error) {
 			if errors.Is(err, push.ErrInvalidDeviceToken) {
-				s.schedulerNotificationsMX.Lock()
+				s.schedulerPushNotificationsMX.Lock()
 				invalidTokens = append(invalidTokens, &invalidToken{
 					UserID: arg.sn.UserID,
 					Token:  arg.pn.Target,
 				})
-				s.schedulerNotificationsMX.Unlock()
+				s.schedulerPushNotificationsMX.Unlock()
 			} else {
-				log.Error(errors.Wrapf(err, "can't send notification for:%v", arg.sn.UserID))
+				log.Error(errors.Wrapf(err, "can't send push notification for:%v", arg.sn.UserID))
 			}
 		}, func(arg *pushNotification) {
-			s.schedulerNotificationsMX.Lock()
-			defer s.schedulerNotificationsMX.Unlock()
+			s.schedulerPushNotificationsMX.Lock()
+			defer s.schedulerPushNotificationsMX.Unlock()
 
-			successedNotifications = append(successedNotifications, arg)
+			successedNotifications = append(successedNotifications, arg.sn)
 		}); eErr != nil {
 			log.Error(errors.Wrapf(eErr, "[scheduler] failed to execute concurrently sending push notifications for batchNumber:%v,workerNumber:%v", batchNumber, workerNumber)) //nolint:lll // .
 		}
 		if len(toSendPushNotifications) > 0 {
-			go s.telemetryNotifications.collectElapsed(2, *before.Time) //nolint:gomnd,mnd // .
+			go s.telemetryPushNotifications.collectElapsed(2, *before.Time) //nolint:gomnd,mnd // .
 		}
 
 		/******************************************************************************************************************************************************
@@ -152,7 +153,7 @@ func (s *Scheduler) runNotificationsProcessor(ctx context.Context, workerNumber 
 		}
 		reqCancel()
 		if len(invalidTokens) > 0 {
-			go s.telemetryNotifications.collectElapsed(3, *before.Time) //nolint:gomnd,mnd // .
+			go s.telemetryPushNotifications.collectElapsed(3, *before.Time) //nolint:gomnd,mnd // .
 		}
 
 		/******************************************************************************************************************************************************
@@ -167,7 +168,7 @@ func (s *Scheduler) runNotificationsProcessor(ctx context.Context, workerNumber 
 			errs = append(errs, errors.Wrapf(dErr, "can't delete scheduled notifications for:%#v", emptyTokensNotifications))
 		}
 		if len(successedNotifications)+len(emptyTokensNotifications) > 0 {
-			go s.telemetryNotifications.collectElapsed(4, *before.Time) //nolint:gomnd,mnd // .
+			go s.telemetryPushNotifications.collectElapsed(4, *before.Time) //nolint:gomnd,mnd // .
 		}
 		if err = multierror.Append(nil, errs...).ErrorOrNil(); err != nil {
 			log.Error(errors.Wrapf(err, "[scheduler] failed to mark/delete scheduled notifications for batchNumber:%v,workerNumber:%v", batchNumber, workerNumber))
@@ -216,7 +217,7 @@ func (s *Scheduler) clearInvalidPushNotificationTokens(ctx context.Context, pnIn
 	return errors.Wrapf(err, "failed to update push_notification_token to empty for userID:%v and token %v", userIDs, tokens)
 }
 
-func (s *Scheduler) markScheduledNotificationAsSent(ctx context.Context, now *time.Time, notifications []*pushNotification) error {
+func (s *Scheduler) markScheduledNotificationAsSent(ctx context.Context, now *time.Time, notifications []*sentNotification) error {
 	if len(notifications) == 0 {
 		return nil
 	}
@@ -225,7 +226,7 @@ func (s *Scheduler) markScheduledNotificationAsSent(ctx context.Context, now *ti
 	params := make([]any, 0, numFields*len(notifications))
 	for idx, n := range notifications {
 		values = append(values, fmt.Sprintf("($%[1]v, $%[2]v, $%[3]v, $%[4]v, $%[5]v, $%[6]v, $%[7]v)", idx*numFields+1, idx*numFields+2, idx*numFields+3, idx*numFields+4, idx*numFields+5, idx*numFields+6, idx*numFields+7)) //nolint:gomnd,mnd,lll // .
-		params = append(params, now.Time, n.sn.Language, n.sn.UserID, n.sn.Uniqueness, n.sn.NotificationType, n.sn.NotificationChannel, n.sn.NotificationChannelValue)
+		params = append(params, now.Time, n.Language, n.UserID, n.Uniqueness, n.NotificationType, n.NotificationChannel, n.NotificationChannelValue)
 	}
 	sql := fmt.Sprintf(`WITH sent AS (
 		INSERT INTO sent_notifications(sent_at, language, user_id, uniqueness, notification_type, notification_channel, notification_channel_value)
@@ -240,7 +241,7 @@ func (s *Scheduler) markScheduledNotificationAsSent(ctx context.Context, now *ti
 	return errors.Wrapf(err, "failed to delete scheduled notifications %#v", notifications)
 }
 
-func (s *Scheduler) deleteScheduledNotifications(ctx context.Context, notifications []*scheduledNotificationInfo) error {
+func (s *Scheduler) deleteScheduledNotifications(ctx context.Context, notifications []*scheduledNotification) error {
 	if len(notifications) == 0 {
 		return nil
 	}
@@ -258,10 +259,14 @@ func (s *Scheduler) deleteScheduledNotifications(ctx context.Context, notificati
 	return errors.Wrapf(err, "failed to delete scheduled notifications %#v", notifications)
 }
 
-func (s *Scheduler) fetchScheduledNotifications(ctx context.Context, now *time.Time, workerNumber int64) (resp []*scheduledNotificationInfo, err error) {
+func (s *Scheduler) fetchScheduledNotifications(
+	ctx context.Context, now *time.Time, notificationChannel NotificationChannel, batchSize, workerNumber int64,
+) (resp []*scheduledNotificationInfo, err error) {
 	sql := fmt.Sprintf(`SELECT sn.*,
 				   array_agg(dm.push_notification_token) filter (where dm.push_notification_token is not null)  AS push_notification_tokens,
-				   u.disabled_push_notification_domains
+				   u.disabled_push_notification_domains,
+				   u.telegram_user_id,
+				   u.telegram_bot_id
 			FROM scheduled_notifications sn
 				JOIN users u
 					ON sn.user_id = u.user_id
@@ -274,12 +279,14 @@ func (s *Scheduler) fetchScheduledNotifications(ctx context.Context, now *time.T
 					AND dm.push_notification_token != ''
 				WHERE MOD(i, %[2]v) = %[3]v 
 				      AND scheduled_for <= $1
+					  AND notification_channel = $2
 				GROUP BY sn.i, sn.scheduled_at, sn.scheduled_for, sn.data, sn.language, sn.user_id, sn.uniqueness, sn.notification_type,
-						 sn.notification_channel, sn.notification_channel_value, u.disabled_push_notification_domains
-				ORDER BY MOD(i, %[2]v), scheduled_for ASC
+						 sn.notification_channel, sn.notification_channel_value, u.disabled_push_notification_domains,
+						 u.telegram_user_id, u.telegram_bot_id
+				ORDER BY MOD(i, %[2]v), scheduled_for, notification_channel ASC
 				LIMIT %[4]v`,
-		AllNotificationDomain, schedulerWorkersCount, workerNumber, schedulerBatchSize)
-	resp, err = storage.ExecMany[scheduledNotificationInfo](ctx, s.db, sql, now.Time)
+		AllNotificationDomain, schedulerWorkersCount, workerNumber, batchSize)
+	resp, err = storage.ExecMany[scheduledNotificationInfo](ctx, s.db, sql, now.Time, notificationChannel)
 
 	return resp, errors.Wrapf(err, "failed to fetch scheduled notifications worker:%v", workerNumber)
 }

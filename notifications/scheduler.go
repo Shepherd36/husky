@@ -18,35 +18,43 @@ import (
 	"github.com/ice-blockchain/wintr/log"
 	"github.com/ice-blockchain/wintr/multimedia/picture"
 	"github.com/ice-blockchain/wintr/notifications/push"
+	"github.com/ice-blockchain/wintr/notifications/telegram"
 )
 
+//nolint:funlen // .
 func MustStartScheduler(ctx context.Context) *Scheduler {
 	var cfg config
 	appcfg.MustLoadFromKey(applicationYamlKey, &cfg)
 	ddlWorkersParam := fmt.Sprintf(ddl, schedulerWorkersCount)
 	sh := Scheduler{
-		cfg:                      &cfg,
-		db:                       storage.MustConnect(context.Background(), ddlWorkersParam, applicationYamlKey), //nolint:contextcheck // .
-		pictureClient:            picture.New(applicationYamlKey),
-		pushNotificationsClient:  push.New(applicationYamlKey),
-		telemetryNotifications:   new(telemetry).mustInit([]string{"scheduler notifications[full iteration]", "get_scheduled_notifications", "process_notifications", "clear_invalid_tokens", "delete_scheduled_notifications"}), //nolint:lll // .
-		telemetryAnnouncements:   new(telemetry).mustInit([]string{"scheduler announcements[full iteration]", "get_scheduled_announcements", "process_announcements", "delete_scheduled_announcements"}),                         //nolint:lll // .
-		schedulerAnnouncementsMX: &sync.Mutex{},
-		schedulerNotificationsMX: &sync.Mutex{},
+		cfg:                              &cfg,
+		db:                               storage.MustConnect(context.Background(), ddlWorkersParam, applicationYamlKey), //nolint:contextcheck // .
+		pictureClient:                    picture.New(applicationYamlKey),
+		pushNotificationsClient:          push.New(applicationYamlKey),
+		telegramNotificationsClient:      telegram.New(applicationYamlKey),
+		telemetryPushNotifications:       new(telemetry).mustInit([]string{"scheduler push notifications[full iteration]", "get_push_scheduled_notifications", "process_push_notifications", "clear_invalid_tokens", "delete_push_scheduled_notifications"}), //nolint:lll // .
+		telemetryTelegramNotifications:   new(telemetry).mustInit([]string{"scheduler telegram notifications[full iteration]", "get_telegram_scheduled_notifications", "process_telegram_notifications", "delete_telegram_scheduled_notifications"}),         //nolint:lll // .
+		telemetryAnnouncements:           new(telemetry).mustInit([]string{"scheduler push announcements[full iteration]", "get_scheduled_push_announcements", "process_push_announcements", "delete_scheduled_push_announcements"}),                         //nolint:lll // .
+		schedulerPushAnnouncementsMX:     &sync.Mutex{},
+		schedulerPushNotificationsMX:     &sync.Mutex{},
+		schedulerTelegramNotificationsMX: &sync.Mutex{},
 	}
-	loadPushNotificationTranslationTemplates()
 	go sh.startWeeklyStatsUpdater(ctx)
 	wg := new(sync.WaitGroup)
-	wg.Add(2 * int(schedulerWorkersCount)) //nolint:gomnd,mnd // .
+	wg.Add(3 * int(schedulerWorkersCount)) //nolint:gomnd,mnd // .
 	defer wg.Wait()
 	for workerNumber := range schedulerWorkersCount {
 		go func(wn int64) {
 			defer wg.Done()
-			sh.runNotificationsProcessor(ctx, wn)
+			sh.runPushNotificationsProcessor(ctx, wn)
 		}(workerNumber)
 		go func(wn int64) {
 			defer wg.Done()
-			sh.runAnnouncementsProcessor(ctx, wn)
+			sh.runPushAnnouncementsProcessor(ctx, wn)
+		}(workerNumber)
+		go func(wn int64) {
+			defer wg.Done()
+			sh.runTelegramNotificationsProcessor(ctx, wn)
 		}(workerNumber)
 	}
 
