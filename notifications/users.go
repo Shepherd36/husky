@@ -283,8 +283,10 @@ func (s *userTableSource) upsertUser(ctx context.Context, us *users.UserSnapshot
                    REFERRED_BY,
                    PHONE_NUMBER_HASH,
                    LANGUAGE,
-                   USER_ID
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                   USER_ID,
+				   TELEGRAM_USER_ID,
+				   TELEGRAM_BOT_ID
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
     ON CONFLICT(user_id)
       DO UPDATE
       	SET        PHONE_NUMBER = EXCLUDED.PHONE_NUMBER,
@@ -295,7 +297,9 @@ func (s *userTableSource) upsertUser(ctx context.Context, us *users.UserSnapshot
                    PROFILE_PICTURE_NAME = EXCLUDED.PROFILE_PICTURE_NAME,
                    REFERRED_BY = EXCLUDED.REFERRED_BY,
                    PHONE_NUMBER_HASH = EXCLUDED.PHONE_NUMBER_HASH,
-                   LANGUAGE = EXCLUDED.LANGUAGE`
+                   LANGUAGE = EXCLUDED.LANGUAGE,
+				   TELEGRAM_USER_ID = EXCLUDED.TELEGRAM_USER_ID,
+				   TELEGRAM_BOT_ID = EXCLUDED.TELEGRAM_BOT_ID`
 	_, err := storage.Exec(ctx, s.db, sql,
 		us.PhoneNumber,
 		us.Email,
@@ -307,6 +311,8 @@ func (s *userTableSource) upsertUser(ctx context.Context, us *users.UserSnapshot
 		us.PhoneNumberHash,
 		us.Language,
 		us.ID,
+		us.TelegramUserID,
+		us.TelegramBotID,
 	)
 
 	return errors.Wrapf(err, "failed to upsert %#v", us)
@@ -338,7 +344,25 @@ func (r *repository) getUserByID(ctx context.Context, userID string) (*user, err
 	if ctx.Err() != nil {
 		return nil, errors.Wrap(ctx.Err(), "context failed")
 	}
-	usr, err := storage.Get[user](ctx, r.db, `SELECT * FROM users WHERE user_id = $1`, userID)
+	usr, err := storage.Get[user](ctx, r.db, `SELECT 
+			last_ping_cooldown_ended_at,
+			disabled_push_notification_domains,
+			disabled_email_notification_domains,
+			disabled_sms_notification_domains,
+			agenda_contact_user_ids,
+			phone_number,
+			email,
+			first_name,
+			last_name,
+			user_id,
+			username,
+			profile_picture_name,
+			referred_by,
+			phone_number_hash,
+			COALESCE(telegram_user_id, '') AS telegram_user_id,
+			COALESCE(telegram_bot_id, '') AS telegram_bot_id,
+			language
+		FROM users WHERE user_id = $1`, userID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get user by id: %#v", userID)
 	}
