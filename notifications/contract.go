@@ -14,6 +14,7 @@ import (
 	"github.com/ice-blockchain/eskimo/users"
 	messagebroker "github.com/ice-blockchain/wintr/connectors/message_broker"
 	storage "github.com/ice-blockchain/wintr/connectors/storage/v2"
+	storagev3 "github.com/ice-blockchain/wintr/connectors/storage/v3"
 	"github.com/ice-blockchain/wintr/email"
 	"github.com/ice-blockchain/wintr/multimedia/picture"
 	"github.com/ice-blockchain/wintr/notifications/inapp"
@@ -301,6 +302,7 @@ type (
 		cfg                         *config
 		shutdown                    func() error
 		db                          *storage.DB
+		freezerDB                   storagev3.DB
 		mb                          messagebroker.Client
 		pushNotificationsClient     push.Client
 		telegramNotificationsClient telegram.Client

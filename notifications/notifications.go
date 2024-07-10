@@ -17,6 +17,7 @@ import (
 	appcfg "github.com/ice-blockchain/wintr/config"
 	messagebroker "github.com/ice-blockchain/wintr/connectors/message_broker"
 	storage "github.com/ice-blockchain/wintr/connectors/storage/v2"
+	storagev3 "github.com/ice-blockchain/wintr/connectors/storage/v3"
 	"github.com/ice-blockchain/wintr/email"
 	"github.com/ice-blockchain/wintr/log"
 	"github.com/ice-blockchain/wintr/multimedia/picture"
@@ -56,6 +57,7 @@ func StartProcessor(ctx context.Context, cancel context.CancelFunc) Processor { 
 	prc := &processor{repository: &repository{
 		cfg:                         &cfg,
 		db:                          storage.MustConnect(context.Background(), ddlWorkersParam, applicationYamlKey), //nolint:contextcheck,lll // We need to gracefully shut it down.
+		freezerDB:                   storagev3.MustConnect(context.Background(), applicationYamlKey),                //nolint:contextcheck,lll // We need to gracefully shut it down.
 		mb:                          messagebroker.MustConnect(ctx, applicationYamlKey),
 		pushNotificationsClient:     push.New(applicationYamlKey),
 		telegramNotificationsClient: telegram.New(applicationYamlKey),
@@ -80,7 +82,7 @@ func StartProcessor(ctx context.Context, cancel context.CancelFunc) Processor { 
 		&agendaContactsSource{processor: prc},
 		&miningSessionSource{processor: prc},
 	)
-	prc.shutdown = closeAll(mbConsumer, prc.mb, prc.db, prc.pushNotificationsClient.Close)
+	prc.shutdown = closeAll(mbConsumer, prc.mb, prc.db, prc.pushNotificationsClient.Close, prc.freezerDB.Close)
 	go prc.startOldSentNotificationsCleaner(ctx)
 	go prc.startOldSentAnnouncementsCleaner(ctx)
 
@@ -112,6 +114,9 @@ func (p *processor) CheckHealth(ctx context.Context) error {
 	if err := p.db.Ping(ctx); err != nil {
 		return errors.Wrap(err, "[health-check] failed to ping DB")
 	}
+	if err := p.checkFreezerDBHealth(ctx); err != nil {
+		return errors.Wrap(err, "[health-check] failed to checkFreezerDBHealth")
+	}
 	type ts struct {
 		TS *time.Time `json:"ts"`
 	}
@@ -129,6 +134,21 @@ func (p *processor) CheckHealth(ctx context.Context) error {
 	}, responder)
 
 	return errors.Wrapf(<-responder, "[health-check] failed to send health check message to broker")
+}
+
+func (r *repository) checkFreezerDBHealth(ctx context.Context) error {
+	if resp := r.freezerDB.Ping(ctx); resp.Err() != nil || resp.Val() != "PONG" {
+		if resp.Err() == nil {
+			resp.SetErr(errors.Errorf("response `%v` is not `PONG`", resp.Val()))
+		}
+
+		return errors.Wrap(resp.Err(), "[health-check] failed to ping freezerDB")
+	}
+	if !r.freezerDB.IsRW(ctx) {
+		return errors.New("freezerDB is not writeable")
+	}
+
+	return nil
 }
 
 func (p *processor) startOldSentNotificationsCleaner(ctx context.Context) {

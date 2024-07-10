@@ -10,6 +10,9 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ice-blockchain/eskimo/users"
+	"github.com/ice-blockchain/freezer/model"
+	"github.com/ice-blockchain/freezer/tokenomics"
+	storagev3 "github.com/ice-blockchain/wintr/connectors/storage/v3"
 	"github.com/ice-blockchain/wintr/log"
 	"github.com/ice-blockchain/wintr/notifications/inapp"
 	"github.com/ice-blockchain/wintr/notifications/push"
@@ -23,7 +26,7 @@ func (r *repository) sendNewReferralNotification(ctx context.Context, us *users.
 	usernameEmpty := us.Username == "" || us.Username == us.ID
 	referredByNotChanged := us.Before != nil && us.Before.ID != "" && us.User != nil && us.User.ID != "" && us.User.ReferredBy == us.Before.ReferredBy
 	if us.User == nil || us.User.ReferredBy == "" || us.User.ReferredBy == us.User.ID ||
-		(referredByNotChanged && !usernameEmpty && !(us.Before.Username == "" || us.Before.Username == us.Before.ID)) ||
+		(referredByNotChanged && !usernameEmpty && us.Before.Username != "" && us.Before.Username != us.Before.ID) ||
 		usernameEmpty {
 		return nil
 	}
@@ -76,14 +79,21 @@ func (r *repository) sendNewReferralNotification(ctx context.Context, us *users.
 		return errors.Wrapf(r.sendInAppNotification(ctx, in), "failed to sendInAppNotification for %v, notif:%#v", NewReferralNotificationType, in)
 	}
 	pn := make([]*pushNotification, 0, len(*tokens.PushNotificationTokens))
-	data := struct{ Username string }{Username: fmt.Sprintf("@%v", us.User.Username)}
+	data := struct {
+		Username, Coin string
+		Amount         uint64
+	}{
+		Username: fmt.Sprintf("@%v", us.User.Username),
+		Coin:     r.cfg.TokenName,
+		Amount:   r.getNewReferralCoinAmount(ctx, us.User.ReferredBy),
+	}
 	for _, token := range *tokens.PushNotificationTokens {
 		pn = append(pn, &pushNotification{
 			pn: &push.Notification[push.DeviceToken]{
 				Data:     map[string]string{"deeplink": deeplink},
 				Target:   token,
 				Title:    tmpl.getTitle(data),
-				Body:     tmpl.getBody(nil),
+				Body:     tmpl.getBody(data),
 				ImageURL: us.User.ProfilePictureURL,
 			},
 			sn: &sentNotification{
@@ -105,4 +115,33 @@ func (r *repository) sendNewReferralNotification(ctx context.Context, us *users.
 	}, func() error {
 		return errors.Wrapf(r.sendInAppNotification(ctx, in), "failed to sendInAppNotification for %v, notif:%#v", NewReferralNotificationType, in)
 	}), "failed to executeConcurrently")
+}
+
+func (r *repository) getNewReferralCoinAmount(ctx context.Context, referredBy string) uint64 {
+	const defaultNewReferralCoinAmount = 500.0
+	//nolint:gocritic,godot // TODO: Uncomment this asap!
+	// const defaultNewReferralCoinAmount = tokenomics.WelcomeBonusV2Amount
+	freezerInternalID, err := tokenomics.GetInternalID(ctx, r.freezerDB, referredBy)
+	if err != nil {
+		log.Error(errors.Wrapf(err, "failed to tokenomics.GetInternalID for referredBy: %v", referredBy))
+
+		return uint64(defaultNewReferralCoinAmount)
+	}
+	state, err := storagev3.Get[struct {
+		model.UserIDField
+		model.PreStakingBonusField
+	}](ctx, r.freezerDB, model.SerializedUsersKey(freezerInternalID))
+	if err != nil || len(state) == 0 {
+		if err == nil {
+			err = errors.Wrapf(ErrRelationNotFound, "missing state for freezerInternalID:%v referredBy:%v", freezerInternalID, referredBy)
+		}
+		log.Error(errors.Wrapf(err, "failed to get PreStakingBonus for freezerInternalID:%v referredBy:%v", freezerInternalID, referredBy))
+
+		return uint64(defaultNewReferralCoinAmount)
+	}
+	if state[0].PreStakingBonus == 0 {
+		return uint64(defaultNewReferralCoinAmount)
+	}
+
+	return uint64((state[0].PreStakingBonus + 100.0) * defaultNewReferralCoinAmount / 100.0) //nolint:gomnd,mnd // Nope.
 }
