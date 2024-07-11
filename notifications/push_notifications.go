@@ -21,9 +21,10 @@ import (
 
 type (
 	pushNotificationTemplate struct {
-		title, body *template.Template
-		Title       string `json:"title"` //nolint:revive // That's intended.
-		Body        string `json:"body"`  //nolint:revive // That's intended.
+		title, body, altBody *template.Template
+		Title                string `json:"title"`   //nolint:revive // That's intended.
+		Body                 string `json:"body"`    //nolint:revive // That's intended.
+		AltBody              string `json:"altBody"` //nolint:revive // That's intended.
 	}
 )
 
@@ -47,29 +48,39 @@ func (t *pushNotificationTemplate) getBody(data any) string {
 	return bf.String()
 }
 
+func (t *pushNotificationTemplate) getAltBody(data any) string {
+	if data == nil {
+		return t.AltBody
+	}
+	bf := new(bytes.Buffer)
+	log.Panic(errors.Wrapf(t.altBody.Execute(bf, data), "failed to execute altBody template for data:%#v", data))
+
+	return bf.String()
+}
+
 func loadPushNotificationTranslationTemplates() {
 	const totalLanguages = 50
 	allPushNotificationTemplates = make(map[NotificationType]map[languageCode]*pushNotificationTemplate, len(AllNotificationTypes))
 	for _, notificationType := range AllNotificationTypes {
 		content, fErr := translations.ReadFile(fmt.Sprintf("translations/push/%v.txt", notificationType))
-		if fErr != nil {
-			panic(fErr)
-		}
+		log.Panic(fErr) //nolint:revive // Wrong.
 		allPushNotificationTemplates[notificationType] = make(map[languageCode]*pushNotificationTemplate, totalLanguages)
-		var translations map[string]*struct {
-			Body  string `json:"body"`
-			Title string `json:"title"`
+		var languageData map[string]*struct {
+			Body    string `json:"body"`
+			AltBody string `json:"altBody"`
+			Title   string `json:"title"`
 		}
-		err := json.Unmarshal(content, &translations)
-		if err != nil {
-			panic(err)
-		}
-		for language, data := range translations {
+		log.Panic(json.Unmarshal(content, &languageData))
+		for language, data := range languageData {
 			var tmpl pushNotificationTemplate
 			tmpl.Body = data.Body
+			tmpl.AltBody = data.AltBody
 			tmpl.Title = data.Title
 			tmpl.title = template.Must(template.New(fmt.Sprintf("push_%v_%v_title", notificationType, language)).Parse(data.Title))
 			tmpl.body = template.Must(template.New(fmt.Sprintf("push_%v_%v_body", notificationType, language)).Parse(data.Body))
+			if tmpl.AltBody != "" {
+				tmpl.altBody = template.Must(template.New(fmt.Sprintf("push_%v_%v_alt_body", notificationType, language)).Parse(data.AltBody))
+			}
 			allPushNotificationTemplates[notificationType][language] = &tmpl
 		}
 	}

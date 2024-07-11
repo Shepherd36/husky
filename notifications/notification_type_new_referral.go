@@ -88,12 +88,18 @@ func (r *repository) sendNewReferralNotification(ctx context.Context, us *users.
 		Amount:   r.getNewReferralCoinAmount(ctx, us.User.ReferredBy),
 	}
 	for _, token := range *tokens.PushNotificationTokens {
+		var body string
+		if data.Amount > 0 {
+			body = tmpl.getBody(data)
+		} else {
+			body = tmpl.getAltBody(nil)
+		}
 		pn = append(pn, &pushNotification{
 			pn: &push.Notification[push.DeviceToken]{
 				Data:     map[string]string{"deeplink": deeplink},
 				Target:   token,
 				Title:    tmpl.getTitle(data),
-				Body:     tmpl.getBody(data),
+				Body:     body,
 				ImageURL: us.User.ProfilePictureURL,
 			},
 			sn: &sentNotification{
@@ -118,18 +124,16 @@ func (r *repository) sendNewReferralNotification(ctx context.Context, us *users.
 }
 
 func (r *repository) getNewReferralCoinAmount(ctx context.Context, referredBy string) uint64 {
-	const defaultNewReferralCoinAmount = 500.0
-	//nolint:gocritic,godot // TODO: Uncomment this asap!
-	// const defaultNewReferralCoinAmount = tokenomics.WelcomeBonusV2Amount
 	freezerInternalID, err := tokenomics.GetInternalID(ctx, r.freezerDB, referredBy)
 	if err != nil {
 		log.Error(errors.Wrapf(err, "failed to tokenomics.GetInternalID for referredBy: %v", referredBy))
 
-		return uint64(defaultNewReferralCoinAmount)
+		return uint64(tokenomics.WelcomeBonusV2Amount)
 	}
 	state, err := storagev3.Get[struct {
 		model.UserIDField
 		model.PreStakingBonusField
+		model.BalanceT1WelcomeBonusPendingField
 	}](ctx, r.freezerDB, model.SerializedUsersKey(freezerInternalID))
 	if err != nil || len(state) == 0 {
 		if err == nil {
@@ -137,11 +141,14 @@ func (r *repository) getNewReferralCoinAmount(ctx context.Context, referredBy st
 		}
 		log.Error(errors.Wrapf(err, "failed to get PreStakingBonus for freezerInternalID:%v referredBy:%v", freezerInternalID, referredBy))
 
-		return uint64(defaultNewReferralCoinAmount)
+		return uint64(tokenomics.WelcomeBonusV2Amount)
+	}
+	if state[0].BalanceT1WelcomeBonusPending >= 25*tokenomics.WelcomeBonusV2Amount {
+		return 0
 	}
 	if state[0].PreStakingBonus == 0 {
-		return uint64(defaultNewReferralCoinAmount)
+		return uint64(tokenomics.WelcomeBonusV2Amount)
 	}
 
-	return uint64((state[0].PreStakingBonus + 100.0) * defaultNewReferralCoinAmount / 100.0) //nolint:gomnd,mnd // Nope.
+	return uint64((state[0].PreStakingBonus + 100.0) * tokenomics.WelcomeBonusV2Amount / 100.0) //nolint:gomnd,mnd // Nope.
 }
